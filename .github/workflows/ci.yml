@@ -83,7 +83,7 @@ jobs:
       - name: Compile benchmarks
         run: cd core && cargo bench --no-run
       - name: Run benchmarks (short)
-        run: cd core && cargo bench -- --warm-up-time 1 --measurement-time 2 --sample-size 10
+        run: cd core && cargo bench --bench ring_bench --bench latency_bench -- --warm-up-time 1 --measurement-time 2 --sample-size 10
 
   cli-smoke:
     name: CLI Smoke Test
@@ -103,7 +103,7 @@ jobs:
       - name: synapse compile smoke test
         run: |
           TMPOUT=$(mktemp -d)
-          ./idl/target/debug/synapse compile examples/game.bridge --lang rust python cpp --output "$TMPOUT"
+          ./idl/target/debug/synapse compile idl/examples/game.bridge --lang rust python cpp --out-dir "$TMPOUT"
           test -f "$TMPOUT/game.rs" && test -f "$TMPOUT/game.py" && test -f "$TMPOUT/game.hpp"
           echo "All codegen outputs generated"
           rm -rf "$TMPOUT"

@@ -334,6 +334,13 @@ mod tests {
                 thread::spawn(move || {
                     let slot =
                         unsafe { LatestSlot::<TestData>::from_ptr(mem_r.as_ptr() as *mut u8) };
+                    // Wait until the writer has published at least one value.
+                    // This prevents a race on macOS (and other platforms) where thread
+                    // scheduling can allow readers to finish their loop before the writer
+                    // has written anything, resulting in 0 successful reads.
+                    while !slot.has_value() {
+                        std::hint::spin_loop();
+                    }
                     let mut consistent_reads = 0u64;
                     for _ in 0..iterations {
                         if let Some(data) = slot.read() {
