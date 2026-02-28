@@ -18,6 +18,7 @@ pub mod control;
 pub mod error;
 pub mod ring;
 pub mod shm;
+pub mod typed_channel;
 
 use control::{ControlBlock, State};
 use error::{Result, SynapseError};
