@@ -16,6 +16,7 @@
 
 pub mod control;
 pub mod error;
+pub mod latest_slot;
 pub mod ring;
 pub mod shm;
 pub mod typed_channel;
