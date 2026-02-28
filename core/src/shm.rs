@@ -12,7 +12,7 @@ pub struct SharedRegion {
     name: String,
     is_creator: bool,
     #[cfg(windows)]
-    handle: isize,
+    handle: *mut ::core::ffi::c_void,
 }
 
 // SAFETY: SharedRegion is explicitly designed for cross-process shared memory.
@@ -155,32 +155,33 @@ impl SharedRegion {
     }
 
     // ── Windows implementation ──
+    // windows-sys 0.59: HANDLE = *mut c_void, MapViewOfFile → MEMORY_MAPPED_VIEW_ADDRESS
 
     #[cfg(windows)]
     fn win_create(name: &str, size: usize) -> Result<Self> {
         use windows_sys::Win32::System::Memory::*;
         use windows_sys::Win32::Foundation::*;
 
-        let wide_name: Vec<u8> = format!("Local\\synapse_{name}\0").into_bytes();
+        let map_name = format!("Local\\synapse_{name}\0");
 
         unsafe {
             let handle = CreateFileMappingA(
-                INVALID_HANDLE_VALUE as isize,
+                INVALID_HANDLE_VALUE,
                 std::ptr::null(),
                 PAGE_READWRITE,
                 (size >> 32) as u32,
                 size as u32,
-                wide_name.as_ptr(),
+                map_name.as_ptr(),
             );
-            if handle == 0 {
+            if handle.is_null() {
                 return Err(SynapseError::ShmError(format!(
                     "CreateFileMappingA failed: {}",
                     std::io::Error::last_os_error()
                 )));
             }
 
-            let ptr = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
-            if ptr.is_null() {
+            let view = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
+            if view.Value.is_null() {
                 CloseHandle(handle);
                 return Err(SynapseError::ShmError(format!(
                     "MapViewOfFile failed: {}",
@@ -188,10 +189,11 @@ impl SharedRegion {
                 )));
             }
 
-            std::ptr::write_bytes(ptr as *mut u8, 0, size);
+            let ptr = view.Value as *mut u8;
+            std::ptr::write_bytes(ptr, 0, size);
 
             Ok(Self {
-                ptr: ptr as *mut u8,
+                ptr,
                 size,
                 name: name.to_string(),
                 is_creator: true,
@@ -203,20 +205,21 @@ impl SharedRegion {
     #[cfg(windows)]
     fn win_open(name: &str, size: usize) -> Result<Self> {
         use windows_sys::Win32::System::Memory::*;
+        use windows_sys::Win32::Foundation::*;
 
-        let wide_name: Vec<u8> = format!("Local\\synapse_{name}\0").into_bytes();
+        let map_name = format!("Local\\synapse_{name}\0");
 
         unsafe {
-            let handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, wide_name.as_ptr());
-            if handle == 0 {
+            let handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, map_name.as_ptr());
+            if handle.is_null() {
                 return Err(SynapseError::ShmError(format!(
                     "OpenFileMappingA failed: {}",
                     std::io::Error::last_os_error()
                 )));
             }
 
-            let ptr = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
-            if ptr.is_null() {
+            let view = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
+            if view.Value.is_null() {
                 CloseHandle(handle);
                 return Err(SynapseError::ShmError(format!(
                     "MapViewOfFile failed: {}",
@@ -225,7 +228,7 @@ impl SharedRegion {
             }
 
             Ok(Self {
-                ptr: ptr as *mut u8,
+                ptr: view.Value as *mut u8,
                 size,
                 name: name.to_string(),
                 is_creator: false,
@@ -250,7 +253,7 @@ impl Drop for SharedRegion {
         unsafe {
             use windows_sys::Win32::System::Memory::*;
             use windows_sys::Win32::Foundation::*;
-            UnmapViewOfFile(self.ptr as *const _);
+            UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: self.ptr as *mut _ });
             CloseHandle(self.handle);
         }
     }
