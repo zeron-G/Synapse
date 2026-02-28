@@ -47,6 +47,20 @@ jobs:
       - name: Test (idl)
         run: cd idl && cargo test --verbose
 
+      - name: Python bridge tests
+        run: python3 examples/test_python_bridge.py
+
+      - name: Compile C++ receiver (compilation check)
+        run: >
+          g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt
+          -o /tmp/cpp_receiver examples/cpp_receiver.cpp
+
+      - name: Compile and run C++ header test
+        run: |
+          g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt \
+              -o /tmp/synapse_cpp_test tests/synapse_cpp_test.cpp
+          /tmp/synapse_cpp_test
+
   test-windows:
     name: Test (Windows)
     runs-on: windows-latest

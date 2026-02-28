@@ -10,6 +10,9 @@ pub struct SharedRegion {
     ptr: *mut u8,
     size: usize,
     name: String,
+    /// Whether this process created (and therefore owns) the region.
+    /// Only needed on Unix to decide whether to call `shm_unlink` on drop.
+    #[cfg(unix)]
     is_creator: bool,
     #[cfg(windows)]
     handle: *mut ::core::ffi::c_void,
@@ -204,7 +207,6 @@ impl SharedRegion {
                 ptr,
                 size,
                 name: name.to_string(),
-                is_creator: true,
                 handle,
             })
         }
@@ -239,7 +241,6 @@ impl SharedRegion {
                 ptr: view.Value as *mut u8,
                 size,
                 name: name.to_string(),
-                is_creator: false,
                 handle,
             })
         }

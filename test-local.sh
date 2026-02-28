@@ -28,14 +28,44 @@ info "cargo clippy (core)"
 info "cargo clippy (idl)"
 (cd idl && $CARGO clippy -- -D warnings 2>&1) && ok "idl clippy" || fail "idl clippy"
 
-# ── test ─────────────────────────────────
+# ── Rust tests ────────────────────────────
 info "cargo test (core)"
 (cd core && $CARGO test --verbose 2>&1) && ok "core tests" || fail "core tests"
 
 info "cargo test (idl)"
 (cd idl && $CARGO test --verbose 2>&1) && ok "idl tests" || fail "idl tests"
 
+# ── Python bridge tests ───────────────────
+info "Python bridge tests"
+if command -v python3 >/dev/null 2>&1; then
+    python3 examples/test_python_bridge.py && ok "Python bridge tests" || fail "Python bridge tests"
+else
+    echo -e "${YELLOW}  python3 not found — skipping Python tests${NC}"
+fi
+
+# ── C++ compilation + runtime ─────────────
+info "C++ compilation check (cpp_receiver.cpp)"
+if command -v g++ >/dev/null 2>&1; then
+    g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt \
+        -o /tmp/cpp_receiver examples/cpp_receiver.cpp \
+        && ok "C++ cpp_receiver compiles" || fail "C++ cpp_receiver compilation"
+
+    info "C++ header test (synapse_cpp_test.cpp)"
+    g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt \
+        -o /tmp/synapse_cpp_test tests/synapse_cpp_test.cpp \
+        && ok "C++ header test compiles" || fail "C++ header test compilation"
+
+    info "Running C++ header test"
+    /tmp/synapse_cpp_test && ok "C++ header test passed" || fail "C++ header test"
+else
+    echo -e "${YELLOW}  g++ not found — skipping C++ tests${NC}"
+fi
+
+# ── Summary ───────────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "  All checks passed! ✨"
+echo -e "  Rust: fmt + clippy + unit + integration + cross-process"
+echo -e "  Python: bridge wire-format + e2e messaging tests"
+echo -e "  C++: compilation check + header runtime tests"
 echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
