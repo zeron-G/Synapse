@@ -1,0 +1,10 @@
+[package]
+name = "synapse-idl"
+version = "0.1.0"
+edition = "2021"
+description = "IDL schema compiler for Synapse cross-language bridge"
+license = "MIT"
+
+[dependencies]
+
+[dev-dependencies]
