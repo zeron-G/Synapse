@@ -31,11 +31,20 @@ impl fmt::Display for SynapseError {
             Self::ShmError(msg) => write!(f, "shared memory error: {msg}"),
             Self::RingFull => write!(f, "ring buffer full"),
             Self::RingEmpty => write!(f, "ring buffer empty"),
-            Self::DataTooLarge { data_len, slot_size } => {
-                write!(f, "data ({data_len} bytes) exceeds slot size ({slot_size} bytes)")
+            Self::DataTooLarge {
+                data_len,
+                slot_size,
+            } => {
+                write!(
+                    f,
+                    "data ({data_len} bytes) exceeds slot size ({slot_size} bytes)"
+                )
             }
             Self::BadMagic { expected, found } => {
-                write!(f, "bad magic: expected {expected:#018x}, found {found:#018x}")
+                write!(
+                    f,
+                    "bad magic: expected {expected:#018x}, found {found:#018x}"
+                )
             }
             Self::VersionMismatch { expected, found } => {
                 write!(f, "version mismatch: expected {expected}, found {found}")
