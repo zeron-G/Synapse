@@ -2,8 +2,14 @@
 name = "synapse-core"
 version = "0.1.0"
 edition = "2021"
+authors = ["Rongze Gao <90145946+zeron-G@users.noreply.github.com>"]
 description = "Cross-language runtime bridge using shared memory + lock-free ring buffers"
 license = "MIT"
+repository = "https://github.com/zeron-G/Synapse"
+homepage = "https://github.com/zeron-G/Synapse"
+keywords = ["shared-memory", "ipc", "ring-buffer", "cross-language", "zero-copy"]
+categories = ["concurrency", "memory-management", "game-development"]
+readme = "../README.md"
 
 [dependencies]
 

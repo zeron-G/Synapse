@@ -67,16 +67,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.1.0] — 2026-02-27
+## [0.1.0] — 2026-02-28
+
+First public release. Available on [PyPI](https://pypi.org/p/synapse-bridge)
+(`pip install synapse-bridge`) and [crates.io](https://crates.io/crates/synapse-core)
+(`cargo add synapse-core`). C++ header at `bindings/cpp/include/synapse.h`.
 
 ### Added — Phase 1: Core Runtime
 - Cross-platform shared memory (`SharedRegion`): Linux POSIX shm + Windows `CreateFileMapping`
 - Lock-free SPSC ring buffer (`RingHeader`, `Ring`): power-of-2 capacity, cacheline-aligned head/tail
 - `ControlBlock`: magic number, version, random session token (u128), state machine (`Init -> Ready -> Closing -> Dead`), PID tracking, heartbeat fields
 - `host()` / `connect()` lifecycle in Rust (`synapse-core` crate)
-- PyO3 Python bindings (`synapse` native module)
+- PyO3 Python bindings (`synapse` native module, published as `synapse-bridge` on PyPI)
 - Pure-mmap Python bridge — no native module required, matches Rust wire format exactly
-- C++ header-only client (`bindings/cpp/include/synapse.h`)
+- C++ header-only client (`bindings/cpp/include/synapse.h`) — no build step needed
 - End-to-end demo: Python AI host <-> C++ game loop connector
-- 12 tests passing: 7 unit + 4 integration + 1 doc-test
-- Validated on Linux and Windows
+- 130+ tests passing across core, IDL, Python, and C++ suites
+- Validated on Linux, Windows, and macOS
+- IDL schema compiler (`synapse compile`) for `.bridge` -> Rust/Python/C++ codegen
+- Typed channels, latest-value slots, adaptive wait, graceful shutdown

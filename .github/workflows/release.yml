@@ -1,0 +1,205 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Python wheels ────────────────────────────────────────────────────────────
+
+  build-wheels-linux:
+    name: Wheels (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build manylinux wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+          manylinux: auto
+          working-directory: bindings/python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux
+          path: bindings/python/dist/*.whl
+
+  build-wheels-windows:
+    name: Wheels (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+          working-directory: bindings/python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows
+          path: bindings/python/dist/*.whl
+
+  build-wheels-macos:
+    name: Wheels (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build universal wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist --target universal2-apple-darwin
+          working-directory: bindings/python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos
+          path: bindings/python/dist/*.whl
+
+  build-sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: bindings/python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: bindings/python/dist/*.tar.gz
+
+  # ── CLI binaries ─────────────────────────────────────────────────────────────
+
+  build-cli:
+    name: CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary: synapse
+            artifact: synapse-linux-amd64
+          - os: windows-latest
+            binary: synapse.exe
+            artifact: synapse-windows-amd64
+          - os: macos-latest
+            binary: synapse
+            artifact: synapse-macos-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            idl/target
+          key: ${{ runner.os }}-cli-release-${{ hashFiles('idl/Cargo.lock') }}
+      - name: Build CLI
+        run: cd idl && cargo build --release --bin synapse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: idl/target/release/${{ matrix.binary }}
+
+  # ── Publish to PyPI ──────────────────────────────────────────────────────────
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build-wheels-linux, build-wheels-windows, build-wheels-macos, build-sdist]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/synapse-bridge
+    permissions:
+      id-token: write  # OIDC trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── Publish to crates.io ─────────────────────────────────────────────────────
+
+  publish-crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+            idl/target
+          key: ${{ runner.os }}-crates-release-${{ hashFiles('**/Cargo.lock') }}
+      - name: Publish synapse-core
+        run: cd core && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+      - name: Wait for crates.io index
+        run: sleep 30
+      - name: Publish synapse-idl
+        run: cd idl && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+
+  # ── GitHub Release ───────────────────────────────────────────────────────────
+
+  create-release:
+    name: Create GitHub Release
+    needs: [publish-pypi, publish-crates, build-cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'synapse-*'
+          path: artifacts
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: wheels
+          merge-multiple: true
+      - name: Extract v0.1.0 changelog section
+        run: |
+          awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md \
+            | head -n -2 > release-notes.md
+          echo "" >> release-notes.md
+          echo "---" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "**PyPI:** \`pip install synapse-bridge\`" >> release-notes.md
+          echo "**crates.io:** \`cargo add synapse-core\`" >> release-notes.md
+          echo "**C++:** copy \`bindings/cpp/include/synapse.h\` — no build step needed" >> release-notes.md
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Synapse ${{ github.ref_name }} — Cross-Language Runtime Bridge"
+          body_path: release-notes.md
+          files: |
+            artifacts/synapse-linux-amd64/synapse
+            artifacts/synapse-windows-amd64/synapse.exe
+            artifacts/synapse-macos-amd64/synapse
+            wheels/*.whl
