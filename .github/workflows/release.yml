@@ -144,29 +144,11 @@ jobs:
           packages-dir: dist/
 
   # ── Publish to crates.io ─────────────────────────────────────────────────────
-
-  publish-crates:
-    name: Publish to crates.io
-    # Skip if CRATES_IO_TOKEN is not configured — set it in repo Settings → Secrets
-    if: ${{ secrets.CRATES_IO_TOKEN != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            core/target
-            idl/target
-          key: ${{ runner.os }}-crates-release-${{ hashFiles('**/Cargo.lock') }}
-      - name: Publish synapse-core
-        run: cd core && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish synapse-idl
-        run: cd idl && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+  # NOTE: crates.io publishing requires a CRATES_IO_TOKEN secret configured in
+  # repo Settings → Secrets and variables → Actions. To enable, add a job here
+  # using: run: cd core && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+  # Job-level `if: secrets.CRATES_IO_TOKEN != ''` does not work in GitHub Actions;
+  # the token must be present or the job omitted entirely.
 
   # ── GitHub Release ───────────────────────────────────────────────────────────
 

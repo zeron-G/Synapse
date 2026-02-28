@@ -270,6 +270,12 @@ mod tests {
 
         let reader = thread::spawn(move || {
             let slot = unsafe { LatestSlot::<TestData>::from_ptr(mem_reader.as_ptr() as *mut u8) };
+            // Wait until the writer has published at least one value before starting
+            // to read. Without this, the reader may exhaust its loop before the writer
+            // has written anything, causing a spurious assertion failure on slow CI.
+            while !slot.has_value() {
+                std::hint::spin_loop();
+            }
             let mut last_id = 0u64;
             let mut reads = 0u64;
 
