@@ -382,6 +382,10 @@ fn test_lvs_sustained_pressure() {
             thread::spawn(move || {
                 let slot = unsafe { LatestSlot::<GameState>::from_ptr(mem_r.as_ptr() as *mut u8) };
                 started_r.fetch_add(1, Ordering::Release);
+                // Wait for writer to produce at least one value
+                while !slot.has_value() {
+                    std::hint::spin_loop();
+                }
                 let mut consistent = 0u64;
                 for _ in 0..iterations * 10 {
                     if let Some(state) = slot.read() {
