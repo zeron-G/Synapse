@@ -20,7 +20,7 @@ fn synapse_bin() -> PathBuf {
     let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("debug")
-        .join("synapse");
+        .join(if cfg!(windows) { "synapse.exe" } else { "synapse" });
     assert!(bin.exists(), "binary not found at {}", bin.display());
     bin
 }
