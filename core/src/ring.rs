@@ -201,6 +201,11 @@ impl Ring {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Maximum payload size per slot (slot_size minus 4-byte length prefix).
+    pub fn slot_payload_size(&self) -> usize {
+        self.slot_size() as usize - 4
+    }
 }
 
 #[cfg(test)]
