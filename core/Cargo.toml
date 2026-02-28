@@ -1,0 +1,20 @@
+[package]
+name = "synapse-core"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-language runtime bridge using shared memory + lock-free ring buffers"
+license = "MIT"
+
+[dependencies]
+
+[dev-dependencies]
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_Security",
+] }
