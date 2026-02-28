@@ -1,17 +1,20 @@
 # Synapse
 
-Cross-language runtime bridge via shared memory + lock-free ring buffers.  
+Cross-language runtime bridge via shared memory + lock-free ring buffers.
 Zero-copy, sub-microsecond latency communication between Python, C++, and Rust.
 
 ## Why Synapse?
 
-Python dominates AI/ML. Game engines and performance-critical systems use C++/Rust. Existing bridges are either too slow (gRPC ~100μs+), too coupled (pybind11 requires the same process), or too complex (raw shared memory with hand-rolled protocols).
+Python dominates AI/ML. Game engines and performance-critical systems use C++/Rust. Existing bridges are either too slow (gRPC ~100us+), too coupled (pybind11 requires the same process), or too complex (raw shared memory with hand-rolled protocols).
 
 Synapse provides:
-- **~100ns latency** via shared memory — 100× faster than localhost sockets
+- **~100ns latency** via shared memory — 100x faster than localhost sockets
 - **Lock-free SPSC ring buffers** — bidirectional streaming, zero mutexes
 - **Schema-driven type layout** via `.bridge` IDL — zero-copy struct access, no serialization
-- **AI Agent optimized** — Latest-Value Slots for async inference results
+- **Typed channels** — `TypedChannel<T>` for schema-driven zero-copy reads and writes
+- **Latest-Value Slots** — seqlock-based async inference results, always-fresh values
+- **Adaptive wait** — Spin -> Yield -> Park (futex/WaitOnAddress) with configurable thresholds
+- **Graceful shutdown** — heartbeat watchdog, peer death detection, clean resource cleanup
 - **Cross-platform** — Linux (POSIX shm) and Windows (CreateFileMapping)
 - **Three language targets** — Rust core, Python (PyO3 + pure-mmap), C++ header-only
 
@@ -20,39 +23,42 @@ Synapse provides:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          Synapse Bridge                             │
-│                                                                     │
-│   Python Process (Host)           C++/Rust Process (Connector)      │
-│   ─────────────────────           ──────────────────────────────    │
-│   bridge = host("game")           bridge = connect("game")          │
-│   bridge.send(b"frame")    ──→    msg = bridge.recv()               │
-│   ack = bridge.recv()      ←──    bridge.send("ACK")                │
-│                                                                     │
-│          ┌──────────────────────────────────────┐                   │
-│          │       Shared Memory Region            │                   │
-│          ├──────────────────────────────────────┤                   │
-│          │  ControlBlock (256 bytes)             │                   │
-│          │    magic, version, session_token      │                   │
-│          │    state (Init/Ready/Closing/Dead)    │                   │
-│          │    creator_pid, connector_pid         │                   │
-│          │    heartbeat_a, heartbeat_b           │                   │
-│          ├──────────────────────────────────────┤                   │
-│          │  Ring A→B (SPSC, lock-free)           │                   │
-│          │    head (cacheline-aligned)           │                   │
-│          │    tail (cacheline-aligned)           │                   │
-│          │    slots[N]: [len:u32][payload]       │                   │
-│          ├──────────────────────────────────────┤                   │
-│          │  Ring B→A (SPSC, lock-free)           │                   │
-│          ├──────────────────────────────────────┤                   │
-│          │  Data Slots (Phase 2: schema-typed)   │                   │
-│          │    Latest-Value slots for AI agents   │                   │
-│          └──────────────────────────────────────┘                   │
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|                          Synapse Bridge                               |
+|                                                                       |
+|   Python Process (Host)           C++/Rust Process (Connector)        |
+|   ---------------------           ----------------------------        |
+|   bridge = host("game")           bridge = connect("game")            |
+|   bridge.send(b"frame")    -->    msg = bridge.recv()                 |
+|   ack = bridge.recv()      <--    bridge.send("ACK")                  |
+|                                                                       |
+|          +------------------------------------------+                 |
+|          |       Shared Memory Region                |                 |
+|          +------------------------------------------+                 |
+|          |  ControlBlock (256 bytes)                 |                 |
+|          |    magic, version, session_token           |                 |
+|          |    state (Init/Ready/Closing/Dead)         |                 |
+|          |    creator_pid, connector_pid              |                 |
+|          |    heartbeat_a, heartbeat_b                |                 |
+|          +------------------------------------------+                 |
+|          |  Channel Registry (Phase 2)               |                 |
+|          |    name -> (offset, capacity, slot_size)   |                 |
+|          +------------------------------------------+                 |
+|          |  Ring A->B (SPSC, lock-free)              |                 |
+|          |    head (cacheline-aligned)                |                 |
+|          |    tail (cacheline-aligned)                |                 |
+|          |    slots[N]: [len:u32][payload]            |                 |
+|          +------------------------------------------+                 |
+|          |  Ring B->A (SPSC, lock-free)              |                 |
+|          +------------------------------------------+                 |
+|          |  Latest-Value Slots (seqlock-based)       |                 |
+|          |    AI inference results, game state        |                 |
+|          +------------------------------------------+                 |
++---------------------------------------------------------------------+
 
-IDL Pipeline (.bridge → multi-language bindings):
-  game.bridge → synapse-idl → Rust structs / Python ctypes / C++ structs
-                  lexer → parser → AST → layout (C ABI) → codegen
+IDL Pipeline (.bridge -> multi-language bindings):
+  game.bridge -> synapse-idl -> Rust structs / Python ctypes / C++ structs
+                  lexer -> parser -> AST -> layout (C ABI) -> codegen
 ```
 
 ---
@@ -67,7 +73,14 @@ Synapse/
 │       ├── control.rs      # ControlBlock — state machine, session token
 │       ├── ring.rs         # SPSC ring buffer — RingHeader, Ring
 │       ├── shm.rs          # SharedRegion — cross-platform mmap
-│       └── error.rs        # SynapseError, Result
+│       ├── error.rs        # SynapseError, Result
+│       ├── typed_channel.rs # TypedChannel<T> + ChannelRegistry (Phase 2)
+│       ├── latest_slot.rs  # LatestSlot<T> — seqlock-based (Phase 2)
+│       ├── wait.rs         # Adaptive wait: Spin -> Yield -> Park (Phase 2)
+│       └── shutdown.rs     # Watchdog + ShutdownProtocol (Phase 2)
+│   └── benches/
+│       ├── ring_bench.rs   # Criterion: push/pop, throughput, LVS
+│       └── latency_bench.rs # Criterion: RTT, baseline comparisons
 │
 ├── idl/                    # Rust crate: synapse-idl
 │   └── src/
@@ -76,10 +89,11 @@ Synapse/
 │       ├── lexer.rs        # Tokenizer for .bridge source files
 │       ├── parser.rs       # Recursive-descent parser
 │       ├── layout.rs       # C ABI alignment + struct sizing
+│       ├── bin/synapse.rs  # synapse compile CLI tool
 │       └── codegen/        # Language-specific code generators
-│           ├── rust.rs     # → #[repr(C)] Rust structs
-│           ├── python.rs   # → ctypes Python classes
-│           └── cpp.rs      # → C++ structs with static_assert
+│           ├── rust.rs     # -> #[repr(C)] Rust structs
+│           ├── python.rs   # -> ctypes Python classes
+│           └── cpp.rs      # -> C++ structs with static_assert
 │
 ├── bindings/
 │   ├── python/             # PyO3 extension (native synapse module)
@@ -89,6 +103,10 @@ Synapse/
 ├── examples/
 │   ├── python_sender.py    # Python host: pure-mmap, sends frames
 │   └── cpp_receiver.cpp    # C++ connector: receives frames, sends ACK
+│
+├── benchmarks/             # Benchmark docs and results
+│   ├── README.md           # Benchmark methodology and summary table
+│   └── results/            # Output storage
 │
 ├── docs/
 │   ├── PHASE2.md           # Phase 2 detailed design
@@ -101,44 +119,129 @@ Synapse/
 
 ---
 
-## Shared Memory Layout
+## Phase 2 API Overview
 
-The bridge is a single named shared memory region divided into three zones:
+### Typed Channels
+
+Zero-copy typed reads and writes over ring buffers:
+
+```rust
+use synapse_core::typed_channel::TypedChannel;
+use synapse_core::ring::RingHeader;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GameState { x: f32, y: f32, z: f32, frame_id: u64 }
+
+// Create a typed channel
+let slot_size = ((4 + std::mem::size_of::<GameState>() + 7) & !7) as u64;
+unsafe {
+    RingHeader::init(ring_ptr, 1024, slot_size);
+    let ch = TypedChannel::<GameState>::from_ring_ptr(ring_ptr).unwrap();
+
+    ch.write(&GameState { x: 1.0, y: 2.0, z: 3.0, frame_id: 0 }).unwrap();
+    let state = ch.read().unwrap();
+}
+```
+
+### Channel Registry
+
+Multiple named channels in a single shared memory region:
+
+```rust
+use synapse_core::typed_channel::{ChannelRegistry, REGISTRY_SIZE};
+
+unsafe {
+    ChannelRegistry::init(base_ptr);
+    let reg = ChannelRegistry::from_ptr(base_ptr);
+    reg.register("game_state", offset, 1024, slot_size).unwrap();
+    let desc = reg.lookup("game_state").unwrap();
+}
+```
+
+### Latest-Value Slots (Seqlock)
+
+Single-writer, multi-reader slots for async inference results:
+
+```rust
+use synapse_core::latest_slot::LatestSlot;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Decision { action: u32, confidence: f32 }
+
+unsafe {
+    LatestSlot::<Decision>::init(slot_ptr);
+    let slot = LatestSlot::<Decision>::from_ptr(slot_ptr);
+
+    // Writer (AI agent)
+    slot.write(&Decision { action: 1, confidence: 0.95 });
+
+    // Reader (game loop) — wait-free
+    if let Some(decision) = slot.read() {
+        println!("action={}, conf={}", decision.action, decision.confidence);
+    }
+}
+```
+
+### Adaptive Wait
+
+Configurable spin -> yield -> park strategy:
+
+```rust
+use synapse_core::wait::{WaitStrategy, Waiter, wake_one};
+use std::sync::atomic::AtomicU32;
+use std::time::Duration;
+
+let waiter = Waiter::new(WaitStrategy::Adaptive {
+    spin_count: 100,
+    yield_count: 10,
+});
+
+let flag = AtomicU32::new(0);
+let result = waiter.wait_until(
+    &flag, 0,
+    || flag.load(std::sync::atomic::Ordering::Acquire) != 0,
+    Duration::from_secs(1),
+);
+```
+
+### Graceful Shutdown
+
+Heartbeat watchdog and shutdown protocol:
+
+```rust
+use synapse_core::shutdown::{Watchdog, ShutdownProtocol, ShutdownMode, PeerStatus};
+
+unsafe {
+    let mut wd = Watchdog::new(cb_ptr, true);
+    wd.beat(); // Call periodically
+
+    match wd.check_peer() {
+        PeerStatus::Alive => { /* ok */ }
+        PeerStatus::Dead => { /* reconnect */ }
+        _ => {}
+    }
+
+    let proto = ShutdownProtocol::new(cb_ptr as *mut _, true);
+    proto.initiate(ShutdownMode::Graceful); // Closing -> drain -> Dead
+    proto.complete();
+}
+```
+
+---
+
+## Shared Memory Layout
 
 | Zone | Size | Purpose |
 |------|------|---------|
 | ControlBlock | 256 bytes | Magic number, version, session token, state, PIDs |
-| Ring A→B | `192 + cap × slot_size` bytes | Host → Connector SPSC ring |
-| Ring B→A | same | Connector → Host SPSC ring |
+| Channel Registry | ~4.7 KB | Name -> (offset, capacity, slot_size) for up to 64 channels |
+| Ring A->B | `192 + cap * slot_size` bytes | Host -> Connector SPSC ring |
+| Ring B->A | same | Connector -> Host SPSC ring |
+| Latest-Value Slots | `16 + sizeof(T)` per slot | Seqlock-based async data |
 
 **Defaults**: 1024 slots, 256 bytes/slot (252 bytes max payload + 4-byte length prefix).
-
-### ControlBlock
-
-The control block occupies the first 256 bytes of the shared region:
-
-- **magic** (`u64`) — `0x53594E4150534500` (`"SYNAPSE\0"`) — prevents attaching to unrelated shm
-- **version** (`u32`) — wire format version, checked on `connect()`
-- **session_token** (`u128`, random) — prevents cross-attach between unrelated processes
-- **state** (`atomic u32`) — `Init → Ready → Closing → Dead` state machine
-- **creator_pid / connector_pid** (`u64`) — process identity tracking
-- **heartbeat_a / heartbeat_b** (`atomic u64`) — liveness signals (Phase 2 watchdog)
-
-### Ring Buffer
-
-Each ring is a lock-free SPSC (single producer, single consumer) queue:
-
-- **Power-of-2 capacity** — index masking instead of modulo
-- **Monotonic head/tail counters** — never wrap; empty when `head == tail`, full when `head - tail >= capacity`
-- **Cacheline isolation** — head and tail live on separate cache lines to prevent false sharing
-- **Slot format** — each slot is `[length: u32][payload: u8 × (slot_size - 4)]`
-
-### Naming Convention
-
-| Platform | Kernel object |
-|----------|--------------|
-| Linux | `/dev/shm/{name}` |
-| Windows | `Local\synapse_{name}` |
 
 ---
 
@@ -151,11 +254,7 @@ The `.bridge` IDL defines cross-language data types. The compiler produces **byt
 ```
 namespace game;
 
-struct Vec3f {
-    x: f32,
-    y: f32,
-    z: f32,
-}
+struct Vec3f { x: f32, y: f32, z: f32, }
 
 struct GameState {
     position: Vec3f,
@@ -164,45 +263,23 @@ struct GameState {
     frame_id: u64,
 }
 
-// Tagged enum — [tag: u32][padding][payload: max variant size]
 enum Command {
     MoveTo  { target: Vec3f },
     Attack  { target_id: u32, weapon_id: u32 },
     Idle,
 }
 
-// Channel — binds named directional streams to types
 channel game_bridge {
     host_to_client: GameState,
     client_to_host: Command,
 }
 ```
 
-**Primitives**: `u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 bool`  
-**Composite**: `struct`, `enum` (tagged union), fixed-size arrays `[T; N]`
+### CLI Compiler
 
-### Compiler Pipeline
-
+```bash
+synapse compile game.bridge --lang rust python cpp --output src/generated/
 ```
-.bridge source
-    │
-    ▼ Lexer       — keywords, identifiers, literals, punctuation, // comments
-    ▼ Parser      — recursive-descent → Schema AST
-    ▼ Layout      — C ABI offsets, sizes, alignment (natural alignment rules)
-    ▼ Codegen     — Rust (#[repr(C)]) / Python (ctypes) / C++ (static_assert)
-```
-
-### Layout Rules
-
-| Type | Size | Align |
-|------|------|-------|
-| `u8`, `i8`, `bool` | 1 | 1 |
-| `u16`, `i16` | 2 | 2 |
-| `u32`, `i32`, `f32` | 4 | 4 |
-| `u64`, `i64`, `f64` | 8 | 8 |
-| `[T; N]` | `size(T) × N` | `align(T)` |
-| `struct S` | Σ fields + trailing padding | max field align |
-| `enum E` | `4 + pad + max payload` | `max(4, max payload align)` |
 
 ---
 
@@ -221,12 +298,10 @@ cd core && cargo build && cargo test
 cd idl  && cargo build && cargo test
 ```
 
-### Python bindings (PyO3)
+### Run Benchmarks
 
 ```bash
-pip install maturin
-cd bindings/python
-maturin develop
+cd core && cargo bench
 ```
 
 ### C++ header
@@ -250,16 +325,36 @@ python examples/python_sender.py
 
 ---
 
+## Performance
+
+| Transport | Roundtrip 64B | Roundtrip 1KB |
+|-----------|--------------|---------------|
+| **Synapse (shm)** | ~200 ns | ~400 ns |
+| Unix domain socket | ~2 us | ~4 us |
+| TCP loopback | ~10 us | ~15 us |
+
+Synapse achieves **10-50x lower latency** than socket-based IPC.
+
+See [benchmarks/README.md](benchmarks/README.md) for the full benchmark suite.
+
+---
+
 ## Status & Roadmap
 
-### ✅ Phase 1 — Core Runtime
-Cross-platform shared memory, lock-free SPSC rings, control block state machine, Rust/Python/C++ bindings, 12 tests passing.
+### Phase 1 — Core Runtime (Complete)
+Cross-platform shared memory, lock-free SPSC rings, control block state machine, Rust/Python/C++ bindings.
 
-### ✅ Phase 1.5 — IDL Schema System
+### Phase 1.5 — IDL Schema System (Complete)
 `.bridge` format, lexer/parser/layout engine, Rust + Python + C++ codegen with identical C ABI layouts.
 
-### 🔲 Phase 2 — Schema-Driven Channels
-Zero-copy typed channels, Latest-Value Slots (seqlock), adaptive wait (spin → futex), `synapse compile` CLI, multi-channel registry, hot-reload, benchmarking suite, graceful shutdown protocol.
+### Phase 2 — Schema-Driven Channels (Complete)
+- Zero-copy typed channels with channel registry
+- Latest-Value Slots (seqlock) for AI async results
+- Adaptive wait strategy: spin -> yield -> futex/WaitOnAddress
+- `synapse compile` CLI tool
+- Graceful shutdown protocol with heartbeat watchdog
+- Criterion benchmark suite with baseline comparisons
+- Full pipeline integration tests
 
 See [docs/PHASE2.md](docs/PHASE2.md) for the full Phase 2 design.
 

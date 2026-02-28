@@ -41,11 +41,22 @@ jobs:
       - name: Clippy (idl)
         run: cd idl && cargo clippy -- -D warnings
 
-      - name: Test (core)
+      - name: Test (core — unit + integration + Phase 2)
         run: cd core && cargo test --verbose
 
       - name: Test (idl)
         run: cd idl && cargo test --verbose
+
+      - name: Benchmark compilation check
+        run: cd core && cargo bench --no-run
+
+      - name: synapse compile CLI smoke test
+        run: |
+          cd idl && cargo build --bin synapse
+          TMPOUT=$(mktemp -d)
+          ../idl/target/debug/synapse compile examples/game.bridge --lang rust python cpp --output "$TMPOUT"
+          test -f "$TMPOUT/game.rs" && test -f "$TMPOUT/game.py" && test -f "$TMPOUT/game.hpp"
+          rm -rf "$TMPOUT"
 
       - name: Python bridge tests
         run: python3 examples/test_python_bridge.py
