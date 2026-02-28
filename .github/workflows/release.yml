@@ -53,6 +53,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'  # PyO3 0.23 max supports Python 3.13; macos-latest ships 3.14+
       - name: Build universal wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -120,11 +123,6 @@ jobs:
     name: Publish to PyPI
     needs: [build-wheels-linux, build-wheels-windows, build-wheels-macos, build-sdist]
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/synapse-bridge
-    permissions:
-      id-token: write  # OIDC trusted publishing
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -139,35 +137,21 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
 
   # ── Publish to crates.io ─────────────────────────────────────────────────────
-
-  publish-crates:
-    name: Publish to crates.io
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            core/target
-            idl/target
-          key: ${{ runner.os }}-crates-release-${{ hashFiles('**/Cargo.lock') }}
-      - name: Publish synapse-core
-        run: cd core && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish synapse-idl
-        run: cd idl && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+  # NOTE: crates.io publishing requires a CRATES_IO_TOKEN secret configured in
+  # repo Settings → Secrets and variables → Actions. To enable, add a job here
+  # using: run: cd core && cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+  # Job-level `if: secrets.CRATES_IO_TOKEN != ''` does not work in GitHub Actions;
+  # the token must be present or the job omitted entirely.
 
   # ── GitHub Release ───────────────────────────────────────────────────────────
 
   create-release:
     name: Create GitHub Release
-    needs: [publish-pypi, publish-crates, build-cli]
+    needs: [publish-pypi, build-cli]  # publish-crates is independent; skipping it must not block the release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -193,13 +177,18 @@ jobs:
           echo "**PyPI:** \`pip install synapse-bridge\`" >> release-notes.md
           echo "**crates.io:** \`cargo add synapse-core\`" >> release-notes.md
           echo "**C++:** copy \`bindings/cpp/include/synapse.h\` — no build step needed" >> release-notes.md
+      - name: Rename CLI binaries for uniqueness
+        run: |
+          mv artifacts/synapse-linux-amd64/synapse artifacts/synapse-linux-amd64.bin
+          mv artifacts/synapse-windows-amd64/synapse.exe artifacts/synapse-windows-amd64.exe
+          mv artifacts/synapse-macos-amd64/synapse artifacts/synapse-macos-amd64.bin
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "Synapse ${{ github.ref_name }} — Cross-Language Runtime Bridge"
           body_path: release-notes.md
           files: |
-            artifacts/synapse-linux-amd64/synapse
-            artifacts/synapse-windows-amd64/synapse.exe
-            artifacts/synapse-macos-amd64/synapse
+            artifacts/synapse-linux-amd64.bin
+            artifacts/synapse-windows-amd64.exe
+            artifacts/synapse-macos-amd64.bin
             wheels/*.whl
