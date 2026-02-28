@@ -19,6 +19,7 @@ pub mod error;
 pub mod latest_slot;
 pub mod ring;
 pub mod shm;
+pub mod shutdown;
 pub mod typed_channel;
 pub mod wait;
 
