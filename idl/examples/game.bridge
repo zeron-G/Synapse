@@ -1,0 +1,26 @@
+// Game state bridge — host sends state, client sends commands
+namespace game;
+
+struct Vec3f {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct GameState {
+    position: Vec3f,
+    velocity: Vec3f,
+    health: f32,
+    frame_id: u64,
+}
+
+enum Command {
+    MoveTo { target: Vec3f },
+    Attack { target_id: u32 },
+    Idle,
+}
+
+channel game_bridge {
+    host_to_client: GameState,
+    client_to_host: Command,
+}

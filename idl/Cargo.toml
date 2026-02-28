@@ -6,5 +6,6 @@ description = "IDL schema compiler for Synapse cross-language bridge"
 license = "MIT"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]

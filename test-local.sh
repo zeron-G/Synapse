@@ -35,6 +35,20 @@ info "cargo test (core)"
 info "cargo test (idl)"
 (cd idl && $CARGO test --verbose 2>&1) && ok "idl tests" || fail "idl tests"
 
+# ── synapse CLI smoke test ────────────────
+info "synapse compile CLI"
+(cd idl && $CARGO build --bin synapse 2>&1) && ok "synapse CLI builds" || fail "synapse CLI build"
+
+SYNAPSE="./idl/target/debug/synapse"
+TMPOUT=$(mktemp -d)
+$SYNAPSE compile idl/examples/game.bridge --lang rust python cpp --output "$TMPOUT" \
+    && ok "synapse compile game.bridge" || fail "synapse compile game.bridge"
+[ -f "$TMPOUT/game.rs" ] && [ -f "$TMPOUT/game.py" ] && [ -f "$TMPOUT/game.hpp" ] \
+    && ok "all 3 outputs generated" || fail "missing output files"
+$SYNAPSE compile idl/examples/sensors.bridge --lang rust --output "$TMPOUT" \
+    && ok "synapse compile sensors.bridge" || fail "synapse compile sensors.bridge"
+rm -rf "$TMPOUT"
+
 # ── Python bridge tests ───────────────────
 info "Python bridge tests"
 if command -v python3 >/dev/null 2>&1; then
