@@ -123,6 +123,9 @@ jobs:
     name: Publish to PyPI
     needs: [build-wheels-linux, build-wheels-windows, build-wheels-macos, build-sdist]
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/synapse-bridge
     steps:
       - uses: actions/download-artifact@v4
         with:
