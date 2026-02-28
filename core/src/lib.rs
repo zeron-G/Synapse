@@ -14,8 +14,8 @@
 //! let data = bridge.recv().unwrap();
 //! ```
 
-pub mod error;
 pub mod control;
+pub mod error;
 pub mod ring;
 pub mod shm;
 
@@ -124,7 +124,8 @@ pub fn host_with_config(name: &str, capacity: u64, slot_size: u64) -> Result<Bri
         {
             let t = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap().as_nanos();
+                .unwrap()
+                .as_nanos();
             buf.copy_from_slice(&t.to_le_bytes());
         }
         u128::from_le_bytes(buf)

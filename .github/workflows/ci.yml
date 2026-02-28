@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-linux:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check formatting
+        run: |
+          cd core && cargo fmt --check
+          cd ../idl  && cargo fmt --check
+
+      - name: Clippy (core)
+        run: cd core && cargo clippy -- -D warnings
+
+      - name: Clippy (idl)
+        run: cd idl && cargo clippy -- -D warnings
+
+      - name: Test (core)
+        run: cd core && cargo test --verbose
+
+      - name: Test (idl)
+        run: cd idl && cargo test --verbose
+
+      - name: Python bridge tests
+        run: python3 examples/test_python_bridge.py
+
+      - name: Compile C++ receiver (compilation check)
+        run: >
+          g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt
+          -o /tmp/cpp_receiver examples/cpp_receiver.cpp
+
+      - name: Compile and run C++ header test
+        run: |
+          g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt \
+              -o /tmp/synapse_cpp_test tests/synapse_cpp_test.cpp
+          /tmp/synapse_cpp_test
+
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Test (core)
+        run: cd core && cargo test --verbose
+
+      - name: Test (idl)
+        run: cd idl && cargo test --verbose

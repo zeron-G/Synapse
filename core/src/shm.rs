@@ -10,6 +10,9 @@ pub struct SharedRegion {
     ptr: *mut u8,
     size: usize,
     name: String,
+    /// Whether this process created (and therefore owns) the region.
+    /// Only needed on Unix to decide whether to call `shm_unlink` on drop.
+    #[cfg(unix)]
     is_creator: bool,
     #[cfg(windows)]
     handle: *mut ::core::ffi::c_void,
@@ -25,17 +28,25 @@ impl SharedRegion {
     /// Create a new shared memory region.
     pub fn create(name: &str, size: usize) -> Result<Self> {
         #[cfg(unix)]
-        { Self::unix_create(name, size) }
+        {
+            Self::unix_create(name, size)
+        }
         #[cfg(windows)]
-        { Self::win_create(name, size) }
+        {
+            Self::win_create(name, size)
+        }
     }
 
     /// Open an existing shared memory region.
     pub fn open(name: &str, size: usize) -> Result<Self> {
         #[cfg(unix)]
-        { Self::unix_open(name, size) }
+        {
+            Self::unix_open(name, size)
+        }
         #[cfg(windows)]
-        { Self::win_open(name, size) }
+        {
+            Self::win_open(name, size)
+        }
     }
 
     /// Raw pointer to the mapped region.
@@ -58,8 +69,8 @@ impl SharedRegion {
     #[cfg(unix)]
     fn unix_create(name: &str, size: usize) -> Result<Self> {
         use std::ffi::CString;
-        let cname = CString::new(format!("/{name}"))
-            .map_err(|e| SynapseError::ShmError(e.to_string()))?;
+        let cname =
+            CString::new(format!("/{name}")).map_err(|e| SynapseError::ShmError(e.to_string()))?;
 
         unsafe {
             let fd = libc::shm_open(
@@ -116,8 +127,8 @@ impl SharedRegion {
     #[cfg(unix)]
     fn unix_open(name: &str, size: usize) -> Result<Self> {
         use std::ffi::CString;
-        let cname = CString::new(format!("/{name}"))
-            .map_err(|e| SynapseError::ShmError(e.to_string()))?;
+        let cname =
+            CString::new(format!("/{name}")).map_err(|e| SynapseError::ShmError(e.to_string()))?;
 
         unsafe {
             let fd = libc::shm_open(cname.as_ptr(), libc::O_RDWR, 0);
@@ -159,8 +170,8 @@ impl SharedRegion {
 
     #[cfg(windows)]
     fn win_create(name: &str, size: usize) -> Result<Self> {
-        use windows_sys::Win32::System::Memory::*;
         use windows_sys::Win32::Foundation::*;
+        use windows_sys::Win32::System::Memory::*;
 
         let map_name = format!("Local\\synapse_{name}\0");
 
@@ -196,7 +207,6 @@ impl SharedRegion {
                 ptr,
                 size,
                 name: name.to_string(),
-                is_creator: true,
                 handle,
             })
         }
@@ -204,8 +214,8 @@ impl SharedRegion {
 
     #[cfg(windows)]
     fn win_open(name: &str, size: usize) -> Result<Self> {
-        use windows_sys::Win32::System::Memory::*;
         use windows_sys::Win32::Foundation::*;
+        use windows_sys::Win32::System::Memory::*;
 
         let map_name = format!("Local\\synapse_{name}\0");
 
@@ -231,7 +241,6 @@ impl SharedRegion {
                 ptr: view.Value as *mut u8,
                 size,
                 name: name.to_string(),
-                is_creator: false,
                 handle,
             })
         }
@@ -251,9 +260,11 @@ impl Drop for SharedRegion {
 
         #[cfg(windows)]
         unsafe {
-            use windows_sys::Win32::System::Memory::*;
             use windows_sys::Win32::Foundation::*;
-            UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: self.ptr as *mut _ });
+            use windows_sys::Win32::System::Memory::*;
+            UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
+                Value: self.ptr as *mut _,
+            });
             CloseHandle(self.handle);
         }
     }

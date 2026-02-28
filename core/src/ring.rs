@@ -1,7 +1,7 @@
 //! Lock-free SPSC ring buffer with cacheline-aligned head/tail.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::ptr;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Cacheline size (64 bytes on x86_64 / ARM).
 const CACHELINE: usize = 64;
@@ -237,7 +237,10 @@ mod tests {
         for i in 0..4 {
             ring.try_push(&[i as u8; 10]).unwrap();
         }
-        assert_eq!(ring.try_push(b"overflow"), Err(crate::error::SynapseError::RingFull));
+        assert_eq!(
+            ring.try_push(b"overflow"),
+            Err(crate::error::SynapseError::RingFull)
+        );
     }
 
     #[test]

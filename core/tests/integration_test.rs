@@ -1,6 +1,6 @@
-use synapse_core::*;
-use synapse_core::ring::{RingHeader, Ring};
 use synapse_core::error::SynapseError;
+use synapse_core::ring::{Ring, RingHeader};
+use synapse_core::*;
 
 #[test]
 fn test_control_block_validation() {
@@ -19,11 +19,16 @@ fn test_ring_data_too_large() {
     let slot_size: u64 = 16;
     let size = RingHeader::region_size(capacity, slot_size);
     let mut region = vec![0u8; size];
-    unsafe { RingHeader::init(region.as_mut_ptr(), capacity, slot_size); }
+    unsafe {
+        RingHeader::init(region.as_mut_ptr(), capacity, slot_size);
+    }
     let ring = unsafe { Ring::from_ptr(region.as_mut_ptr()) };
 
     ring.try_push(&[0u8; 12]).unwrap();
-    assert!(matches!(ring.try_push(&[0u8; 13]), Err(SynapseError::DataTooLarge { .. })));
+    assert!(matches!(
+        ring.try_push(&[0u8; 13]),
+        Err(SynapseError::DataTooLarge { .. })
+    ));
 }
 
 #[test]

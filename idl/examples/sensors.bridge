@@ -1,0 +1,36 @@
+// Sensor data pipeline — multiple channels with array payloads
+namespace sensors;
+
+struct Timestamp {
+    secs: u64,
+    nanos: u32,
+}
+
+struct ImuSample {
+    accel: [f32; 3],
+    gyro: [f32; 3],
+    mag: [f32; 3],
+    ts: Timestamp,
+}
+
+struct LidarScan {
+    ranges: [f32; 64],
+    intensities: [u16; 64],
+    ts: Timestamp,
+}
+
+enum Status {
+    Ok,
+    Error { code: u32 },
+    Calibrating { progress: f32 },
+}
+
+channel imu_stream {
+    samples: ImuSample,
+    status: Status,
+}
+
+channel lidar_stream {
+    scans: LidarScan,
+    status: Status,
+}
