@@ -53,6 +53,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'  # PyO3 0.23 max supports Python 3.13; macos-latest ships 3.14+
       - name: Build universal wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -144,6 +147,8 @@ jobs:
 
   publish-crates:
     name: Publish to crates.io
+    # Skip if CRATES_IO_TOKEN is not configured — set it in repo Settings → Secrets
+    if: ${{ secrets.CRATES_IO_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,7 +172,7 @@ jobs:
 
   create-release:
     name: Create GitHub Release
-    needs: [publish-pypi, publish-crates, build-cli]
+    needs: [publish-pypi, build-cli]  # publish-crates is independent; skipping it must not block the release
     runs-on: ubuntu-latest
     permissions:
       contents: write
