@@ -2,8 +2,14 @@
 name = "synapse-idl"
 version = "0.1.0"
 edition = "2021"
+authors = ["Rongze Gao <90145946+zeron-G@users.noreply.github.com>"]
 description = "IDL schema compiler for Synapse cross-language bridge"
 license = "MIT"
+repository = "https://github.com/zeron-G/Synapse"
+homepage = "https://github.com/zeron-G/Synapse"
+keywords = ["idl", "code-generation", "compiler", "bridge", "cross-language"]
+categories = ["development-tools", "compilers"]
+readme = "../README.md"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

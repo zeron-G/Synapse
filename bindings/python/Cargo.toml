@@ -2,6 +2,13 @@
 name = "synapse-python"
 version = "0.1.0"
 edition = "2021"
+authors = ["Rongze Gao <90145946+zeron-G@users.noreply.github.com>"]
+description = "Python bindings for the Synapse cross-language runtime bridge"
+license = "MIT"
+repository = "https://github.com/zeron-G/Synapse"
+homepage = "https://github.com/zeron-G/Synapse"
+keywords = ["python", "shared-memory", "ipc", "pyo3", "bindings"]
+categories = ["api-bindings", "concurrency"]
 
 [lib]
 name = "synapse"
