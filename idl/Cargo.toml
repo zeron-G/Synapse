@@ -9,3 +9,4 @@ license = "MIT"
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
+tempfile = "3"
