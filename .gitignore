@@ -1,0 +1,9 @@
+/target/
+core/target/
+bindings/*/target/
+__pycache__/
+*.pyc
+.venv/
+*.so
+*.dll
+*.dylib

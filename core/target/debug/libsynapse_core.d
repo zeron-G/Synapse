@@ -1,1 +1,0 @@
-/mnt/d/data/code/github/Synapse/core/target/debug/libsynapse_core.rlib: /mnt/d/data/code/github/Synapse/core/src/control.rs /mnt/d/data/code/github/Synapse/core/src/error.rs /mnt/d/data/code/github/Synapse/core/src/lib.rs /mnt/d/data/code/github/Synapse/core/src/ring.rs /mnt/d/data/code/github/Synapse/core/src/shm.rs
