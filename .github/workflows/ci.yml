@@ -10,88 +10,179 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-linux:
-    name: Test (Linux)
+  fmt:
+    name: Formatting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+      - name: Check formatting (core)
+        run: cd core && cargo fmt --check
+      - name: Check formatting (idl)
+        run: cd idl && cargo fmt --check
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+  clippy:
+    name: Clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Check formatting
-        run: |
-          cd core && cargo fmt --check
-          cd ../idl  && cargo fmt --check
-
+          key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
       - name: Clippy (core)
         run: cd core && cargo clippy -- -D warnings
-
       - name: Clippy (idl)
         run: cd idl && cargo clippy -- -D warnings
 
-      - name: Test (core — unit + integration + Phase 2)
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
+      - name: Test (core)
         run: cd core && cargo test --verbose
-
       - name: Test (idl)
         run: cd idl && cargo test --verbose
 
-      - name: Benchmark compilation check
+  benchmark:
+    name: Benchmark Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
+      - name: Compile benchmarks
         run: cd core && cargo bench --no-run
+      - name: Run benchmarks (short)
+        run: cd core && cargo bench --bench ring_bench --bench latency_bench -- --warm-up-time 1 --measurement-time 2 --sample-size 10
 
-      - name: synapse compile CLI smoke test
+  cli-smoke:
+    name: CLI Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cli-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build synapse CLI
+        run: cd idl && cargo build --bin synapse
+      - name: synapse compile smoke test
         run: |
-          cd idl && cargo build --bin synapse
           TMPOUT=$(mktemp -d)
-          ../idl/target/debug/synapse compile examples/game.bridge --lang rust python cpp --output "$TMPOUT"
+          ./idl/target/debug/synapse compile idl/examples/game.bridge --lang rust python cpp --out-dir "$TMPOUT"
           test -f "$TMPOUT/game.rs" && test -f "$TMPOUT/game.py" && test -f "$TMPOUT/game.hpp"
+          echo "All codegen outputs generated"
           rm -rf "$TMPOUT"
 
-      - name: Python bridge tests
+  python-bridge:
+    name: Python Bridge Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-python-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build core
+        run: cd core && cargo build
+      - name: Run Python bridge e2e tests
         run: python3 examples/test_python_bridge.py
 
-      - name: Compile C++ receiver (compilation check)
+  cpp-tests:
+    name: C++ Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile C++ receiver
         run: >
           g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt
           -o /tmp/cpp_receiver examples/cpp_receiver.cpp
-
       - name: Compile and run C++ header test
         run: |
           g++ -std=c++17 -O2 -Ibindings/cpp/include -lrt \
               -o /tmp/synapse_cpp_test tests/synapse_cpp_test.cpp
           /tmp/synapse_cpp_test
 
-  test-windows:
-    name: Test (Windows)
-    runs-on: windows-latest
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cov-${{ hashFiles('**/Cargo.lock') }}
+      - name: Coverage (core)
+        run: cd core && cargo tarpaulin --out xml --skip-clean
+      - name: Coverage (idl)
+        run: cd idl && cargo tarpaulin --out xml --skip-clean
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: core/cobertura.xml,idl/cobertura.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Test (core)
-        run: cd core && cargo test --verbose
-
-      - name: Test (idl)
-        run: cd idl && cargo test --verbose
+  pr-gate:
+    name: PR Gate
+    if: always()
+    needs: [fmt, clippy, test, benchmark, cli-smoke, python-bridge, cpp-tests, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs
+        run: |
+          results='${{ toJSON(needs.*.result) }}'
+          echo "Results: $results"
+          if echo "$results" | grep -qE '"failure"|"cancelled"'; then
+            echo "Some checks failed"
+            exit 1
+          fi
+          echo "All checks passed"
