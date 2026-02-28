@@ -20,6 +20,7 @@ pub mod latest_slot;
 pub mod ring;
 pub mod shm;
 pub mod typed_channel;
+pub mod wait;
 
 use control::{ControlBlock, State};
 use error::{Result, SynapseError};
