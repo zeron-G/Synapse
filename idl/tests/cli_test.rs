@@ -6,23 +6,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Build the synapse binary once and return its path.
+/// Return the path to the synapse binary built by Cargo.
+///
+/// `CARGO_BIN_EXE_synapse` is set by Cargo at integration-test compile time
+/// and points to the binary that Cargo has already built (including `.exe` on
+/// Windows). Using it avoids spawning a nested `cargo build` from every test
+/// thread and the file-lock races that caused intermittent failures on macOS.
 fn synapse_bin() -> PathBuf {
-    // Build the binary via cargo
-    let status = Command::new("cargo")
-        .args(["build", "--bin", "synapse"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .status()
-        .expect("failed to run cargo build");
-    assert!(status.success(), "cargo build failed");
-
-    // Find the binary in target/debug (idl/ is a standalone crate, not a workspace member)
-    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("debug")
-        .join("synapse");
-    assert!(bin.exists(), "binary not found at {}", bin.display());
-    bin
+    PathBuf::from(env!("CARGO_BIN_EXE_synapse"))
 }
 
 fn game_bridge_path() -> PathBuf {
