@@ -1,5 +1,6 @@
 /target/
 core/target/
+idl/target/
 bindings/*/target/
 __pycache__/
 *.pyc
